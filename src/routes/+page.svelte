@@ -1,59 +1,78 @@
 <script>
-	import Counter from './Counter.svelte';
-	import welcome from '$lib/images/svelte-welcome.webp';
-	import welcome_fallback from '$lib/images/svelte-welcome.png';
+  let device;
+  let characteristic;
+  let status = "Not connected";
+  let file;
+
+  // Connect to Bluetooth device
+  async function connectBluetooth() {
+    try {
+      status = "Connecting...";
+      device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ["00001800-0000-1000-8000-00805f9b34fb"], // Generic Access service
+      });
+
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService("00001800-0000-1000-8000-00805f9b34fb");
+      characteristic = await service.getCharacteristic("00002a00-0000-1000-8000-00805f9b34fb"); // Device Name characteristic
+
+      status = `Connected to ${device.name}`;
+    } catch (error) {
+      console.error(error);
+      status = "Connection failed.";
+    }
+  }
+
+  // Upload the firmware file
+  async function uploadFirmware() {
+    if (!characteristic) {
+      status = "No Bluetooth device connected!";
+      return;
+    }
+
+    if (!file) {
+      status = "Please select a file!";
+      return;
+    }
+
+    status = "Uploading...";
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const chunkSize = 512; // ESP32 Bluetooth buffer size
+      for (let i = 0; i < arrayBuffer.byteLength; i += chunkSize) {
+        const chunk = arrayBuffer.slice(i, i + chunkSize);
+        await characteristic.writeValue(new Uint8Array(chunk));
+        status = `Uploading... ${(i / arrayBuffer.byteLength) * 100}%`;
+      }
+
+      status = "Upload complete!";
+    } catch (error) {
+      console.error(error);
+      status = "Upload failed!";
+    }
+  }
 </script>
 
-<svelte:head>
-	<title>Home</title>
-	<meta name="description" content="Svelte demo app" />
-</svelte:head>
-
-<section>
-	<h1>
-		<span class="welcome">
-			<picture>
-				<source srcset={welcome} type="image/webp" />
-				<img src={welcome_fallback} alt="Welcome" />
-			</picture>
-		</span>
-
-		to your new<br />SvelteKit app
-	</h1>
-
-	<h2>
-		try editing <strong>src/routes/+page.svelte</strong>
-	</h2>
-
-	<Counter />
-</section>
-
 <style>
-	section {
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		align-items: center;
-		flex: 0.6;
-	}
-
-	h1 {
-		width: 100%;
-	}
-
-	.welcome {
-		display: block;
-		position: relative;
-		width: 100%;
-		height: 0;
-		padding: 0 0 calc(100% * 495 / 2048) 0;
-	}
-
-	.welcome img {
-		position: absolute;
-		width: 100%;
-		height: 100%;
-		top: 0;
-		display: block;
-	}
+  button {
+    margin: 10px;
+    padding: 10px 20px;
+    font-size: 16px;
+  }
+  input {
+    margin: 10px;
+  }
 </style>
+
+<h1>ESP32 OTA via Bluetooth</h1>
+<p>Status: {status}</p>
+
+<button on:click={connectBluetooth}>Connect to Bluetooth</button>
+<br />
+
+<label for="file">Select firmware file:</label>
+<input id="file" type="file" on:change={(e) => (file = e.target.files[0])} />
+<br />
+
+<button on:click={uploadFirmware}>Upload Firmware</button>
